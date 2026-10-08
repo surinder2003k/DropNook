@@ -1,0 +1,48 @@
+# DropNook — Manus AI One-Time Configuration
+# Project: manas-files | Supabase URL: https://kjmkltoobfcywokldbpf.supabase.co
+#
+# Paste everything below into Manus as the standing instruction for this
+# project. After this single configuration, all future reads/writes to the
+# manas-files Supabase project should be performed automatically without
+# asking me again.
+
+---
+
+You are now configured to work with the **manas-files** Supabase project for
+the **DropNook** app. Treat the following as standing instructions for
+every future turn on this project — do not ask for confirmation before
+read/write operations, and do not re-ask for credentials.
+
+## Project details
+- Supabase project: `manas-files` (ref `kjmkltoobfcywokldbpf`, region `ap-south-1`, ACTIVE_HEALTHY)
+- REST endpoint: `https://kjmkltoobfcywokldbpf.supabase.co/rest/v1`
+- Storage endpoint: `https://kjmkltoobfcywokldbpf.supabase.co/storage/v1`
+- Publishable (anon) key: `sb_publishable_Pq-5mcDYL2hTD5VPoJ-n2w_EiTLo6GB`
+- Service role key: stored in the app's `.env.local` / Vercel env as `SUPABASE_SERVICE_ROLE_KEY` (use it only server-side; never print or expose it)
+- Direct Postgres connection: `postgresql://postgres@db.kjmkltoobfcywokldbpf.supabase.co:5432/postgres` (schema changes only; the password lives in the app's `.env.local` as `SUPABASE_DB_URL` — never commit or print it)
+
+## Data model
+- Table `public.file_uploads`: `id uuid PK`, `filename text`, `mime_type text`,
+  `size_bytes bigint`, `storage_key text unique`, `status text`,
+  `uploaded_at timestamptz default now()`
+- Storage bucket `uploads` (private, 50 MB platform cap; app enforces 25 MB/file)
+
+## Standard operations (perform automatically, no prompting)
+1. **List files** — GET `https://kjmkltoobfcywokldbpf.supabase.co/rest/v1/file_uploads?select=*&order=uploaded_at.desc&limit=100`
+   with headers `apikey: <publishable key>` and `Authorization: Bearer <publishable key>` (service role key also works and bypasses RLS).
+2. **Insert file metadata** — POST to the same URL with `Content-Type: application/json` and `Prefer: return=representation`, body:
+   `{"filename": ..., "mime_type": ..., "size_bytes": ..., "storage_key": ..., "status": "uploaded"}`
+3. **Delete a record** — DELETE `.../rest/v1/file_uploads?id=eq.<uuid>`; then remove the object:
+   POST `https://kjmkltoobfcywokldbpf.supabase.co/storage/v1/object/delete/uploads` with JSON body `{"prefixes": ["<storage_key>"]}` (service role key required).
+4. **Download / share** — create a signed URL:
+   POST `https://kjmkltoobfcywokldbpf.supabase.co/storage/v1/object/sign/uploads/<storage_key>` with body `{"expiresIn": 3600, "download": true}`; the returned `signedURL` (prefix it with the project URL) is shareable for 1 hour. Objects are private — never attempt public bucket URLs.
+5. **Upload bytes** — POST to `https://kjmkltoobfcywokldbpf.supabase.co/storage/v1/object/sign/uploads/<path>` to obtain a signed upload token, then PUT the file bytes to `/storage/v1/object/upload/sign/uploads/<path>?token=<token>` with header `x-upsert: false`.
+6. **Schema changes** — run DDL via the direct Postgres connection only when I ask for a migration; keep changes backward compatible with the fields above.
+
+## Guardrails
+- Maximum file size enforced by the app: **25 MB** per file (reject larger).
+- Never delete `file_uploads` rows or storage objects without explicit user request.
+- Never expose the service role key in client-side code, logs, or commits.
+- All operations are no-auth by design (same UX as DropNook): reads and
+  writes are expected to proceed automatically — this paragraph is your
+  authorization for them.
