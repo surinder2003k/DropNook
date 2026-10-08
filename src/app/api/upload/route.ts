@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
+import { B2_KEY_PREFIX, isB2Configured, presignB2Upload } from "@/lib/b2";
 
 export const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB (matches Supabase free-tier bucket cap)
 const BUCKET = "uploads";
@@ -21,7 +22,10 @@ function sanitizeFilename(name: string): string {
  * Step 1 of the direct-to-storage upload flow: validates the file metadata
  * and returns a signed upload URL token. The browser then PUTs the file bytes
  * straight to Supabase Storage (no 4.5 MB Vercel body limit), and confirms
- * the metadata via POST /api/files afterwards.
+ * the metadata via POST /api/files afterwards. When the optional Backblaze B2
+ * backend is configured (DROPNOOK_B2_* env vars), a presigned S3 PUT URL is
+ * returned instead (`backend: "b2"`, no token) and the rest of the flow is
+ * identical.
  */
 export async function POST(req: Request) {
   let body: {
@@ -54,7 +58,29 @@ export async function POST(req: Request) {
   }
 
   const safeName = sanitizeFilename(filename);
-  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+  const objectKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+
+  // Backblaze B2 backend configured: presign an S3 PUT URL for the object.
+  if (isB2Configured()) {
+    try {
+      const signedUrl = await presignB2Upload(objectKey);
+      return NextResponse.json({
+        path: `${B2_KEY_PREFIX}${objectKey}`,
+        backend: "b2",
+        signedUrl,
+        contentType:
+          typeof mime_type === "string" && mime_type.length > 0
+            ? mime_type
+            : "application/octet-stream",
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unexpected server error";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  const path = objectKey;
 
   try {
     const supabase = getSupabaseServer();

@@ -57,7 +57,8 @@ const STORAGE_BUCKET = "uploads";
 /**
  * Two-step direct-to-storage upload:
  * 1. POST /api/upload  → signed upload token (tiny JSON request)
- * 2. PUT bytes straight to Supabase Storage (XHR, gives us real progress)
+ * 2. PUT bytes straight to storage — Supabase, or Backblaze B2 when the
+ *    DROPNOOK_B2_* env vars are set (XHR either way, real progress)
  * 3. POST /api/files   → record the metadata row
  *
  * Going direct matters: Vercel serverless functions cap request bodies at
@@ -79,18 +80,23 @@ function uploadFile(
       }),
     });
     const sign = await signRes.json().catch(() => ({}));
-    if (!signRes.ok || !sign.path || !sign.token) {
+    const isB2 = sign.backend === "b2";
+    if (!signRes.ok || !sign.path || (isB2 ? !sign.signedUrl : !sign.token)) {
       throw new Error(sign.error || `Sign request failed (${signRes.status})`);
     }
 
-    // --- step 2: stream the bytes to Supabase Storage --------------------
+    // --- step 2: stream the bytes straight to storage (B2 or Supabase) ---
     await new Promise<void>((resolve, reject) => {
-      const putUrl = `${SUPABASE_URL}/storage/v1/object/upload/sign/${STORAGE_BUCKET}/${sign.path}?token=${encodeURIComponent(sign.token)}`;
+      const putUrl = isB2
+        ? sign.signedUrl
+        : `${SUPABASE_URL}/storage/v1/object/upload/sign/${STORAGE_BUCKET}/${sign.path}?token=${encodeURIComponent(sign.token)}`;
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", putUrl);
-      xhr.setRequestHeader("apikey", SUPABASE_ANON_KEY);
-      xhr.setRequestHeader("Authorization", `Bearer ${SUPABASE_ANON_KEY}`);
-      xhr.setRequestHeader("x-upsert", "false");
+      if (!isB2) {
+        xhr.setRequestHeader("apikey", SUPABASE_ANON_KEY);
+        xhr.setRequestHeader("Authorization", `Bearer ${SUPABASE_ANON_KEY}`);
+        xhr.setRequestHeader("x-upsert", "false");
+      }
       xhr.setRequestHeader(
         "content-type",
         file.type || "application/octet-stream",

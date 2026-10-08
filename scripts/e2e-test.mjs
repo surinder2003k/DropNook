@@ -90,21 +90,28 @@ async function main() {
     }),
   });
   const sign = await signRes.json();
-  ok("POST /api/upload returns path+token", signRes.ok && sign.path && sign.token,
+  const isB2 = sign.backend === "b2";
+  ok("POST /api/upload returns path+token",
+    signRes.ok && sign.path && (isB2 ? sign.signedUrl : sign.token),
     JSON.stringify(sign).slice(0, 300));
   if (!sign.path) throw new Error("cannot continue without sign");
 
-  // 4. PUT bytes directly to Supabase Storage (as the browser does)
-  const putUrl = `${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${sign.path}?token=${encodeURIComponent(sign.token)}`;
+  // 4. PUT bytes directly to storage (as the browser does) — Supabase or B2
+  const putUrl = isB2
+    ? sign.signedUrl
+    : `${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${sign.path}?token=${encodeURIComponent(sign.token)}`;
+  const putHeaders = isB2
+    ? { "content-type": "application/octet-stream" }
+    : {
+        apikey: ANON_KEY,
+        Authorization: `Bearer ${ANON_KEY}`,
+        "x-upsert": "false",
+        "content-type": "application/octet-stream",
+        "cache-control": "3600",
+      };
   const put = await fetch(putUrl, {
     method: "PUT",
-    headers: {
-      apikey: ANON_KEY,
-      Authorization: `Bearer ${ANON_KEY}`,
-      "x-upsert": "false",
-      "content-type": "application/octet-stream",
-      "cache-control": "3600",
-    },
+    headers: putHeaders,
     body: CONTENT,
   });
   const putText = await put.text();
@@ -145,7 +152,10 @@ async function main() {
     `got ${dl.status}`);
   const signed = dl.headers.get("location");
   ok("redirect targets storage signed URL",
-    !!signed && signed.includes("/storage/v1/object/sign/"), signed ?? "(none)");
+    !!signed &&
+      (signed.includes("/storage/v1/object/sign/") ||
+        signed.includes("X-Amz-Signature=")),
+    signed ?? "(none)");
   if (signed) {
     const body = await fetch(signed);
     ok("download fetch succeeds", body.ok, `got ${body.status}`);

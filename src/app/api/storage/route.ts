@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
+import { isB2Configured } from "@/lib/b2";
 
-// Supabase Free tier includes 1 GB of Storage per project. Override with
-// DROPNOOK_STORAGE_QUOTA_BYTES if the plan changes (e.g. 100 GB Pro).
-const DEFAULT_QUOTA_BYTES = 1024 * 1024 * 1024;
+// Free-tier quotas: Supabase includes 1 GB of Storage per project, while the
+// optional Backblaze B2 backend (DROPNOOK_B2_* env vars) includes 10 GB.
+// Override with DROPNOOK_STORAGE_QUOTA_BYTES if either plan changes
+// (e.g. 100 GB = 107374182400 for Supabase Pro).
+const SUPABASE_QUOTA_BYTES = 1024 * 1024 * 1024;
+const B2_QUOTA_BYTES = 10 * 1024 * 1024 * 1024;
 
 /**
  * GET /api/storage — storage usage for the status bar.
@@ -39,7 +43,9 @@ export async function GET() {
     const total =
       Number.isFinite(envQuota) && envQuota > 0
         ? envQuota
-        : DEFAULT_QUOTA_BYTES;
+        : isB2Configured()
+          ? B2_QUOTA_BYTES
+          : SUPABASE_QUOTA_BYTES;
 
     return NextResponse.json(
       { used, total },

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
+import {
+  b2ObjectKey,
+  deleteB2Object,
+  isB2Configured,
+  presignB2Download,
+} from "@/lib/b2";
 
 const BUCKET = "uploads";
 const UUID_RE =
@@ -27,6 +33,24 @@ export async function GET(_req: Request, { params }: RouteContext) {
 
     if (error || !file) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
+    }
+
+    const b2Key = b2ObjectKey(file.storage_key);
+    if (b2Key !== null) {
+      if (!isB2Configured()) {
+        return NextResponse.json(
+          {
+            error:
+              "This file lives in B2 storage, which is not configured on this server",
+          },
+          { status: 503 },
+        );
+      }
+      const url = await presignB2Download(b2Key, file.filename);
+      return NextResponse.redirect(url, {
+        status: 307,
+        headers: { "Cache-Control": "no-store" },
+      });
     }
 
     const { data: signed, error: signError } = await supabase.storage
@@ -84,7 +108,12 @@ export async function DELETE(_req: Request, { params }: RouteContext) {
     }
 
     // Best-effort cleanup of the stored bytes.
-    await supabase.storage.from(BUCKET).remove([file.storage_key]);
+    const b2Key = b2ObjectKey(file.storage_key);
+    if (b2Key !== null) {
+      if (isB2Configured()) await deleteB2Object(b2Key).catch(() => undefined);
+    } else {
+      await supabase.storage.from(BUCKET).remove([file.storage_key]);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

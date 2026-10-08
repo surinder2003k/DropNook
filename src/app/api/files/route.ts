@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
+import {
+  B2_KEY_PREFIX,
+  deleteB2Object,
+  headB2Object,
+  isB2Configured,
+} from "@/lib/b2";
 
 const BUCKET = "uploads";
 const MAX_SIZE_BYTES = 50 * 1024 * 1024;
@@ -63,7 +69,10 @@ export async function POST(req: Request) {
   if (typeof path !== "string" || path.length === 0 || path.length > 240) {
     return NextResponse.json({ error: "path is required" }, { status: 400 });
   }
-  if (/[\\/]\.\.|^\.|\s{2,}/.test(path) || !/^[\w.\- /]+$/.test(path)) {
+  // B2 objects carry a `b2:` prefix in storage_key — validate the raw key.
+  const isB2Path = path.startsWith(B2_KEY_PREFIX);
+  const storageKey = isB2Path ? path.slice(B2_KEY_PREFIX.length) : path;
+  if (/[\\/]\.\.|^\.|\s{2,}/.test(storageKey) || !/^[\w.\- /]+$/.test(storageKey)) {
     return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   }
   if (typeof filename !== "string" || filename.trim().length === 0) {
@@ -81,18 +90,52 @@ export async function POST(req: Request) {
     );
   }
 
+  let verifiedSize = size_bytes;
+
   try {
     const supabase = getSupabaseServer();
 
-    // Verify the object actually landed in storage before recording it.
-    const { error: urlError } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(path, 30);
-    if (urlError) {
-      return NextResponse.json(
-        { error: `File not found in storage — upload may have failed (${urlError.message})` },
-        { status: 404 },
-      );
+    if (isB2Path) {
+      if (!isB2Configured()) {
+        return NextResponse.json(
+          { error: "B2 storage is not configured on this server" },
+          { status: 503 },
+        );
+      }
+      // Verify the object actually landed in B2 before recording it. A
+      // presigned PUT cannot enforce the size cap server-side, so check the
+      // real byte count here and use it (the claim can't understate usage).
+      const actualSize = await headB2Object(storageKey);
+      if (actualSize === null) {
+        return NextResponse.json(
+          { error: "File not found in storage — upload may have failed" },
+          { status: 404 },
+        );
+      }
+      if (actualSize === 0) {
+        return NextResponse.json({ error: "File is empty" }, { status: 400 });
+      }
+      if (actualSize > MAX_SIZE_BYTES) {
+        await deleteB2Object(storageKey).catch(() => undefined);
+        return NextResponse.json(
+          { error: "File exceeds the 50 MB limit" },
+          { status: 413 },
+        );
+      }
+      verifiedSize = actualSize;
+    } else {
+      // Verify the object actually landed in storage before recording it.
+      const { error: urlError } = await supabase.storage
+        .from(BUCKET)
+        .createSignedUrl(storageKey, 30);
+      if (urlError) {
+        return NextResponse.json(
+          {
+            error: `File not found in storage — upload may have failed (${urlError.message})`,
+          },
+          { status: 404 },
+        );
+      }
     }
 
     const { data, error } = await supabase
@@ -103,7 +146,7 @@ export async function POST(req: Request) {
           typeof mime_type === "string" && mime_type.length > 0
             ? mime_type.slice(0, 120)
             : "application/octet-stream",
-        size_bytes,
+        size_bytes: verifiedSize,
         storage_key: path,
         status: "uploaded",
       })
