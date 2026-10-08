@@ -2,7 +2,7 @@
  * Applies supabase/schema.sql to the manas-files Supabase project.
  * Usage: node scripts/apply-schema.mjs   (run from the Dropzone-web folder)
  *
- * Reads .env.local for SUPABASE_DB_URL / DATABASE_URL, falls back to the
+ * Reads .env.local for DROPNOOK_SUPABASE_DB_URL / DATABASE_URL, falls back to the
  * direct connection string for project manas-files.
  */
 import { readFileSync } from "node:fs";
@@ -28,11 +28,11 @@ function readEnvLocal() {
 }
 
 const env = { ...readEnvLocal(), ...process.env };
-const connectionString = env.SUPABASE_DB_URL || env.DATABASE_URL;
+const connectionString = env.DROPNOOK_SUPABASE_DB_URL || env.DATABASE_URL;
 if (!connectionString) {
   console.error(
     [
-      "Missing SUPABASE_DB_URL (or DATABASE_URL).",
+      "Missing DROPNOOK_SUPABASE_DB_URL (or DATABASE_URL).",
       "Set it in .env.local — never hardcode credentials. The direct",
       "`db.<ref>.supabase.co` host is IPv6-only, so use the IPv4 session pooler:",
       "  postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres",

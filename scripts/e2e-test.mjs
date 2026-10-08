@@ -26,8 +26,8 @@ function readEnvLocal() {
 }
 
 const env = { ...readEnvLocal(), ...process.env };
-const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL;
-const ANON_KEY = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_URL = env.NEXT_PUBLIC_DROPNOOK_SUPABASE_URL;
+const ANON_KEY = env.NEXT_PUBLIC_DROPNOOK_SUPABASE_ANON_KEY;
 const BASE = process.argv[2] || "http://localhost:3000";
 
 let passed = 0;

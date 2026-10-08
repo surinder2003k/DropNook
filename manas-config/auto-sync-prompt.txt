@@ -18,8 +18,8 @@ read/write operations, and do not re-ask for credentials.
 - REST endpoint: `https://kjmkltoobfcywokldbpf.supabase.co/rest/v1`
 - Storage endpoint: `https://kjmkltoobfcywokldbpf.supabase.co/storage/v1`
 - Publishable (anon) key: `sb_publishable_Pq-5mcDYL2hTD5VPoJ-n2w_EiTLo6GB`
-- Service role key: stored in the app's `.env.local` / Vercel env as `SUPABASE_SERVICE_ROLE_KEY` (use it only server-side; never print or expose it)
-- Direct Postgres connection: `postgresql://postgres@db.kjmkltoobfcywokldbpf.supabase.co:5432/postgres` (schema changes only; the password lives in the app's `.env.local` as `SUPABASE_DB_URL` — never commit or print it)
+- Service role key: stored in the app's `.env.local` / Vercel env as `DROPNOOK_SUPABASE_SERVICE_ROLE_KEY` (use it only server-side; never print or expose it)
+- Direct Postgres connection: `postgresql://postgres@db.kjmkltoobfcywokldbpf.supabase.co:5432/postgres` (schema changes only; the password lives in the app's `.env.local` as `DROPNOOK_SUPABASE_DB_URL` — never commit or print it)
 
 ## Data model
 - Table `public.file_uploads`: `id uuid PK`, `filename text`, `mime_type text`,

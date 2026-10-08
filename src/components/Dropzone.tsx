@@ -57,8 +57,8 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_DROPNOOK_SUPABASE_URL!;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_DROPNOOK_SUPABASE_ANON_KEY!;
 const STORAGE_BUCKET = "uploads";
 
 /**
