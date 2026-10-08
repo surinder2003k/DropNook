@@ -13,6 +13,8 @@ import {
   XIcon,
   fileGlyph,
 } from "./icons";
+import { formatBytes } from "@/lib/format";
+import { STORAGE_REFRESH_EVENT } from "./StorageBar";
 
 const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 
@@ -32,15 +34,6 @@ type QueueItem = {
   status: "uploading" | "done" | "error";
   error?: string;
 };
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "—";
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 3);
-  const value = bytes / Math.pow(1024, i);
-  return `${value >= 10 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
-}
 
 function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
@@ -255,6 +248,7 @@ export default function Dropzone() {
 
       if (succeeded > 0) {
         await refreshList();
+        window.dispatchEvent(new Event(STORAGE_REFRESH_EVENT));
         setTimeout(() => {
           const doneIds = new Set(
             items
@@ -300,6 +294,7 @@ export default function Dropzone() {
       const body = await res.json().catch(() => ({}) as { error?: string });
       if (!res.ok) throw new Error(body.error || "Delete failed");
       setFiles((f) => f.filter((x) => x.id !== file.id));
+      window.dispatchEvent(new Event(STORAGE_REFRESH_EVENT));
       showBanner(`Deleted "${file.filename}".`);
     } catch (err) {
       showBanner(err instanceof Error ? err.message : "Delete failed");

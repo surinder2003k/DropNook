@@ -1,4 +1,5 @@
 import Dropzone from "@/components/Dropzone";
+import StorageBar from "@/components/StorageBar";
 import { LogoIcon } from "@/components/icons";
 
 // Evaluated once at module load (outside the render phase) so static
@@ -24,6 +25,7 @@ export default function Home() {
             Free · No sign-up · 50 MB per file
           </span>
         </div>
+        <StorageBar />
       </header>
 
       {/* ---------- Main ---------- */}

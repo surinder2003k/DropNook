@@ -62,6 +62,14 @@ async function main() {
   ok("GET /api/files returns array", list0.ok && Array.isArray(list0Body.files),
     JSON.stringify(list0Body).slice(0, 200));
 
+  // 1b. storage usage endpoint (powers the header progress bar)
+  const stor0 = await fetch(`${BASE}/api/storage`);
+  const stor0Body = await stor0.json();
+  ok("GET /api/storage returns used+total bytes",
+    stor0.ok && Number.isFinite(stor0Body.used) && Number.isFinite(stor0Body.total) && stor0Body.total > 0,
+    JSON.stringify(stor0Body).slice(0, 200));
+  const used0 = Number(stor0Body.used) || 0;
+
   // 2. oversized rejection (51 MB metadata → 413)
   const big = await fetch(`${BASE}/api/upload`, {
     method: "POST",
@@ -125,6 +133,12 @@ async function main() {
   ok("file appears in GET /api/files",
     list1Body.files?.some((f) => f.id === id && f.filename === FILENAME));
 
+  // 6b. usage reflects the new file
+  const stor1 = await (await fetch(`${BASE}/api/storage`)).json();
+  ok("storage used grew by file size",
+    Number(stor1.used) === used0 + CONTENT.length,
+    `used ${used0} → ${stor1.used}, expected ${used0 + CONTENT.length}`);
+
   // 7. download redirect + content integrity
   const dl = await fetch(`${BASE}/api/files/${id}`, { redirect: "manual" });
   ok("GET /api/files/[id] issues 307 redirect", dl.status === 307,
@@ -146,6 +160,11 @@ async function main() {
   ok("DELETE /api/files/[id] succeeds", del.ok, `got ${del.status}`);
   const list2 = await (await fetch(`${BASE}/api/files`)).json();
   ok("file gone from list", !list2.files?.some((f) => f.id === id));
+
+  // 8b. usage dropped back after delete
+  const stor2 = await (await fetch(`${BASE}/api/storage`)).json();
+  ok("storage used dropped back after delete",
+    Number(stor2.used) === used0, `used ${stor2.used}, expected ${used0}`);
 
   // 9. 404s
   const miss = await fetch(`${BASE}/api/files/00000000-0000-0000-0000-000000000000`);
