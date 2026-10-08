@@ -10,7 +10,7 @@ create table if not exists public.file_uploads (
   id          uuid primary key default gen_random_uuid(),
   filename    text        not null,
   mime_type   text        not null default 'application/octet-stream',
-  size_bytes  bigint      not null check (size_bytes > 0 and size_bytes <= 52428800),
+  size_bytes  bigint      not null check (size_bytes > 0 and size_bytes <= 5368709120),  -- 5 GB single-PUT ceiling
   storage_key text        not null unique,
   status      text        not null default 'uploaded',
   uploaded_at timestamptz not null default now()

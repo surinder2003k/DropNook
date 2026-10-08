@@ -70,13 +70,13 @@ async function main() {
     JSON.stringify(stor0Body).slice(0, 200));
   const used0 = Number(stor0Body.used) || 0;
 
-  // 2. oversized rejection (51 MB metadata → 413)
+  // 2. oversized rejection (5 GB + 1 byte metadata → 413)
   const big = await fetch(`${BASE}/api/upload`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename: "huge.bin", size: 51 * 1024 * 1024 }),
+    body: JSON.stringify({ filename: "huge.bin", size: 5 * 1024 * 1024 * 1024 + 1 }),
   });
-  ok("POST /api/upload rejects >50 MB with 413", big.status === 413,
+  ok("POST /api/upload rejects >5 GB with 413", big.status === 413,
     `got ${big.status}`);
 
   // 3. sign the upload

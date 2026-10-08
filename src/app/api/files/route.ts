@@ -8,7 +8,7 @@ import {
 } from "@/lib/b2";
 
 const BUCKET = "uploads";
-const MAX_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB single-PUT ceiling (matches /api/upload)
 
 export const FILE_SELECT =
   "id, filename, mime_type, size_bytes, storage_key, status, uploaded_at";
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     size_bytes > MAX_SIZE_BYTES
   ) {
     return NextResponse.json(
-      { error: "size_bytes must be between 1 byte and 50 MB" },
+      { error: "size_bytes must be between 1 byte and 5 GB" },
       { status: 400 },
     );
   }
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
       if (actualSize > MAX_SIZE_BYTES) {
         await deleteB2Object(storageKey).catch(() => undefined);
         return NextResponse.json(
-          { error: "File exceeds the 50 MB limit" },
+          { error: "File exceeds the 5 GB limit" },
           { status: 413 },
         );
       }

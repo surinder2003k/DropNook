@@ -16,7 +16,7 @@ import {
 import { formatBytes } from "@/lib/format";
 import { STORAGE_REFRESH_EVENT } from "./StorageBar";
 
-const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB single-PUT ceiling
 
 type UploadedFile = {
   id: string;
@@ -55,14 +55,15 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_DROPNOOK_SUPABASE_ANON_KEY!;
 const STORAGE_BUCKET = "uploads";
 
 /**
- * Two-step direct-to-storage upload:
- * 1. POST /api/upload  → signed upload token (tiny JSON request)
- * 2. PUT bytes straight to storage — Supabase, or Backblaze B2 when the
- *    DROPNOOK_B2_* env vars are set (XHR either way, real progress)
- * 3. POST /api/files   → record the metadata row
+ * Three-step direct-to-storage upload (B2 backend live):
+ * 1. POST /api/upload  → presigned B2 PUT url (tiny JSON request)
+ * 2. PUT bytes straight to Backblaze B2 (us-east-005, bucket dropnook-files)
+ *    via presigned S3 URL (XHR, real progress, 15-min expiry)
+ * 3. POST /api/files   → verify bytes via HeadObject + record metadata row
  *
  * Going direct matters: Vercel serverless functions cap request bodies at
- * 4.5 MB, so proxying a 50 MB file through an API route would fail.
+ * 4.5 MB, so proxying a multi-GB file through an API route would fail.
+ * S3/B2 single PUT caps at 5 GB — bigger files need multipart (Phase 2).
  */
 function uploadFile(
   file: File,
@@ -85,7 +86,7 @@ function uploadFile(
       throw new Error(sign.error || `Sign request failed (${signRes.status})`);
     }
 
-    // --- step 2: stream the bytes straight to storage (B2 or Supabase) ---
+    // --- step 2: stream the bytes straight to B2 via the presigned URL ---
     await new Promise<void>((resolve, reject) => {
       const putUrl = isB2
         ? sign.signedUrl
@@ -201,7 +202,7 @@ export default function Dropzone() {
       for (const f of incoming) {
         if (f.size > MAX_SIZE_BYTES) {
           showBanner(
-            `"${f.name}" is ${formatBytes(f.size)} — the limit is 50 MB per file.`,
+            `"${f.name}" is ${formatBytes(f.size)} — the limit is 5 GB per file.`,
           );
         } else {
           accepted.push(f);
@@ -382,7 +383,7 @@ export default function Dropzone() {
               Any file type
             </span>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 dark:border-zinc-700 dark:bg-zinc-800/60">
-              Up to 50 MB each
+              Up to 5 GB each
             </span>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 dark:border-zinc-700 dark:bg-zinc-800/60">
               No sign-up needed

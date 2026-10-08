@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
 import { B2_KEY_PREFIX, isB2Configured, presignB2Upload } from "@/lib/b2";
 
-export const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB (matches Supabase free-tier bucket cap)
+// Single-PUT ceiling: S3/B2 PutObject supports one request up to 5 GB, so
+// anything bigger must go through multipart (Phase 2). This cap is
+// enforced on metadata here AND re-verified with HeadObject on confirm
+// (presigned PUTs can't enforce size — over-limit bytes are deleted).
+export const MAX_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
 const BUCKET = "uploads";
 
 function sanitizeFilename(name: string): string {
@@ -52,7 +56,7 @@ export async function POST(req: Request) {
   }
   if (size > MAX_SIZE_BYTES) {
     return NextResponse.json(
-      { error: "File exceeds the 50 MB limit" },
+      { error: "File exceeds the 5 GB limit" },
       { status: 413 },
     );
   }

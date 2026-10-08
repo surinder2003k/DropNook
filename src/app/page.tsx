@@ -22,7 +22,7 @@ export default function Home() {
             </span>
           </div>
           <span className="hidden text-xs text-zinc-400 dark:text-zinc-500 sm:block">
-            Free · No sign-up · 50 MB per file
+            Free · No sign-up · 5 GB per file
           </span>
         </div>
         <StorageBar />

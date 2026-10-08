@@ -6,7 +6,7 @@ import { formatBytes } from "@/lib/format";
 /** Dispatch this (from anywhere in the app) to refresh the bar instantly. */
 export const STORAGE_REFRESH_EVENT = "dropnook:storage-refresh";
 
-type StorageInfo = { used: number; total: number };
+type StorageInfo = { used: number; total: number; objects?: number };
 
 export default function StorageBar() {
   const [info, setInfo] = useState<StorageInfo | null>(null);
@@ -19,7 +19,11 @@ export default function StorageBar() {
       if (!res.ok || !Number.isFinite(body.used) || !Number.isFinite(body.total)) {
         throw new Error(body.error || `status ${res.status}`);
       }
-      setInfo({ used: body.used, total: body.total });
+      setInfo({
+        used: body.used,
+        total: body.total,
+        objects: Number.isFinite(body.objects) ? body.objects : undefined,
+      });
       setFailed(false);
     } catch {
       setFailed(true);

@@ -1,7 +1,9 @@
 import {
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectVersionsCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -145,15 +147,65 @@ export async function headB2Object(objectKey: string): Promise<number | null> {
   }
 }
 
-/** Best-effort delete — an already-missing object is not an error. */
+/**
+ * Delete EVERY version of an object (plus its delete markers). The bucket
+ * keeps all versions, so a plain single-version delete would only add a
+ * delete marker and keep billing the old bytes. Falls back to a plain
+ * delete when the key lacks list/delete-versions permission.
+ */
 export async function deleteB2Object(objectKey: string): Promise<void> {
   const config = requireConfig();
+  const client = getClient(config);
+  const key = objectKey;
   try {
-    await getClient(config).send(
-      new DeleteObjectCommand({ Bucket: config.bucket, Key: objectKey }),
-    );
+    let keyMarker: string | undefined;
+    let versionMarker: string | undefined;
+    for (;;) {
+      const page = await client.send(
+        new ListObjectVersionsCommand({
+          Bucket: config.bucket,
+          Prefix: key,
+          MaxKeys: 100,
+          KeyMarker: keyMarker,
+          VersionIdMarker: versionMarker,
+        }),
+      );
+      const targets = [
+        ...(page.Versions ?? [])
+          .filter((v) => v.Key === key && v.VersionId)
+          .map((v) => ({ Key: key, VersionId: v.VersionId! })),
+        ...(page.DeleteMarkers ?? [])
+          .filter((d) => d.Key === key && d.VersionId)
+          .map((d) => ({ Key: key, VersionId: d.VersionId! })),
+      ];
+      if (targets.length > 0) {
+        await client.send(
+          new DeleteObjectsCommand({
+            Bucket: config.bucket,
+            Delete: { Objects: targets, Quiet: true },
+          }),
+        );
+      }
+      if (!page.IsTruncated) break;
+      keyMarker = page.NextKeyMarker;
+      versionMarker = page.NextVersionIdMarker;
+      if (!keyMarker) break;
+    }
+    return;
   } catch (err) {
-    if (!isNotFound(err)) throw err;
+    if (!isNotFound(err)) {
+      // Fall back to a plain delete (best effort) for restricted keys.
+      try {
+        await client.send(
+          new DeleteObjectCommand({ Bucket: config.bucket, Key: key }),
+        );
+        return;
+      } catch (inner) {
+        if (!isNotFound(inner)) throw inner;
+        return;
+      }
+    }
+    throw err;
   }
 }
 
@@ -171,6 +223,7 @@ export async function getB2BucketUsage(): Promise<{
 }> {
   const config = requireConfig();
   type B2Auth = {
+    accountId: string;
     apiUrl: string;
     authorizationToken: string;
   };
@@ -193,7 +246,7 @@ export async function getB2BucketUsage(): Promise<{
   const bucketRes = await fetch(`${auth.apiUrl}/b2api/v2/b2_list_buckets`, {
     method: "POST",
     headers: { ...authHeader, "Content-Type": "application/json" },
-    body: JSON.stringify({ bucketName: config.bucket }),
+    body: JSON.stringify({ accountId: auth.accountId, bucketName: config.bucket }),
   });
   if (!bucketRes.ok) {
     throw new Error(`B2 bucket lookup failed (${bucketRes.status})`);
