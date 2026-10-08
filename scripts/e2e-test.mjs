@@ -62,13 +62,13 @@ async function main() {
   ok("GET /api/files returns array", list0.ok && Array.isArray(list0Body.files),
     JSON.stringify(list0Body).slice(0, 200));
 
-  // 2. oversized rejection (26 MB metadata → 413)
+  // 2. oversized rejection (51 MB metadata → 413)
   const big = await fetch(`${BASE}/api/upload`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename: "huge.bin", size: 26 * 1024 * 1024 }),
+    body: JSON.stringify({ filename: "huge.bin", size: 51 * 1024 * 1024 }),
   });
-  ok("POST /api/upload rejects >25 MB with 413", big.status === 413,
+  ok("POST /api/upload rejects >50 MB with 413", big.status === 413,
     `got ${big.status}`);
 
   // 3. sign the upload

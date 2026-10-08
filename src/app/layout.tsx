@@ -15,12 +15,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DropNook — Upload & share files instantly",
   description:
-    "DropNook is a free, no-sign-up file sharing tool. Drag, drop, and share any file up to 25 MB — powered by Supabase Storage.",
+    "DropNook is a free, no-sign-up file sharing tool. Drag, drop, and share any file up to 50 MB — powered by Supabase Storage.",
   keywords: ["DropNook", "file sharing", "share files", "upload files", "no sign-up"],
   openGraph: {
     title: "DropNook — Upload & share files instantly",
     description:
-      "Free, no-sign-up file sharing. Drag, drop, and share any file up to 25 MB.",
+      "Free, no-sign-up file sharing. Drag, drop, and share any file up to 50 MB.",
     siteName: "DropNook",
     type: "website",
   },
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     card: "summary",
     title: "DropNook — Upload & share files instantly",
     description:
-      "Free, no-sign-up file sharing. Drag, drop, and share any file up to 25 MB.",
+      "Free, no-sign-up file sharing. Drag, drop, and share any file up to 50 MB.",
   },
 };
 

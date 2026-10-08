@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
 
-export const MAX_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
+export const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB (matches Supabase free-tier bucket cap)
 const BUCKET = "uploads";
 
 function sanitizeFilename(name: string): string {
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   }
   if (size > MAX_SIZE_BYTES) {
     return NextResponse.json(
-      { error: "File exceeds the 25 MB limit" },
+      { error: "File exceeds the 50 MB limit" },
       { status: 413 },
     );
   }

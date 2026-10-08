@@ -14,7 +14,7 @@ import {
   fileGlyph,
 } from "./icons";
 
-const MAX_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
+const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 
 type UploadedFile = {
   id: string;
@@ -68,7 +68,7 @@ const STORAGE_BUCKET = "uploads";
  * 3. POST /api/files   → record the metadata row
  *
  * Going direct matters: Vercel serverless functions cap request bodies at
- * 4.5 MB, so proxying a 25 MB file through an API route would fail.
+ * 4.5 MB, so proxying a 50 MB file through an API route would fail.
  */
 function uploadFile(
   file: File,
@@ -202,7 +202,7 @@ export default function Dropzone() {
       for (const f of incoming) {
         if (f.size > MAX_SIZE_BYTES) {
           showBanner(
-            `"${f.name}" is ${formatBytes(f.size)} — the limit is 25 MB per file.`,
+            `"${f.name}" is ${formatBytes(f.size)} — the limit is 50 MB per file.`,
           );
         } else {
           accepted.push(f);
@@ -381,7 +381,7 @@ export default function Dropzone() {
               Any file type
             </span>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 dark:border-zinc-700 dark:bg-zinc-800/60">
-              Up to 25 MB each
+              Up to 50 MB each
             </span>
             <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 dark:border-zinc-700 dark:bg-zinc-800/60">
               No sign-up needed

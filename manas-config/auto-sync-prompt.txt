@@ -25,7 +25,7 @@ read/write operations, and do not re-ask for credentials.
 - Table `public.file_uploads`: `id uuid PK`, `filename text`, `mime_type text`,
   `size_bytes bigint`, `storage_key text unique`, `status text`,
   `uploaded_at timestamptz default now()`
-- Storage bucket `uploads` (private, 50 MB platform cap; app enforces 25 MB/file)
+- Storage bucket `uploads` (private, 50 MB platform cap; app enforces 50 MB/file — both match)
 
 ## Standard operations (perform automatically, no prompting)
 1. **List files** — GET `https://kjmkltoobfcywokldbpf.supabase.co/rest/v1/file_uploads?select=*&order=uploaded_at.desc&limit=100`
@@ -40,7 +40,7 @@ read/write operations, and do not re-ask for credentials.
 6. **Schema changes** — run DDL via the direct Postgres connection only when I ask for a migration; keep changes backward compatible with the fields above.
 
 ## Guardrails
-- Maximum file size enforced by the app: **25 MB** per file (reject larger).
+- Maximum file size enforced by the app: **50 MB** per file (reject larger).
 - Never delete `file_uploads` rows or storage objects without explicit user request.
 - Never expose the service role key in client-side code, logs, or commits.
 - All operations are no-auth by design (same UX as DropNook): reads and

@@ -7,7 +7,7 @@ Drop a file, get a shareable link, send it anywhere — DropNook is an anonymous
 ## Highlights
 
 - **Zero friction** — no account, no email, no OTP. Open the page and drop.
-- **25 MB per file** — documents, photos, videos, archives — quick handoffs of anything.
+- **50 MB per file** — documents, photos, videos, archives — quick handoffs of anything.
 - **Instant share links** — every upload gets a copy-ready link the moment it lands.
 - **Live progress** — the file streams straight from browser to storage with a real progress bar.
 - **Private by default** — files live in a private bucket and download through 1-hour signed links; nothing is publicly listable.
@@ -18,7 +18,7 @@ Drop a file, get a shareable link, send it anywhere — DropNook is an anonymous
 
 Serverless platforms cap request bodies (~4.5 MB), so DropNook's API routes never see the bytes — they only exchange tiny JSON messages:
 
-1. The browser requests an upload slot; the app validates the metadata (25 MB cap) and returns a **signed upload token**.
+1. The browser requests an upload slot; the app validates the metadata (50 MB cap) and returns a **signed upload token**.
 2. The browser **streams the file directly into storage** with `XMLHttpRequest` — that's where the live progress bar comes from.
 3. The app confirms the object exists and records its metadata, which powers the file list and share links.
 
@@ -33,7 +33,7 @@ Downloads mirror this: the app issues a 1-hour signed URL and redirects to it �
 ## Inside the app
 
 - **Status header** — a live "storage connected" health indicator.
-- **Dropzone** — drag & drop or click to browse, with inline progress, oversize rejection (>25 MB) and a copy-link success state.
+- **Dropzone** — drag & drop or click to browse, with inline progress, oversize rejection (>50 MB) and a copy-link success state.
 - **File list** — newest first, with size and timestamp plus copy link, download and delete actions on every row.
 - **Responsive UI** — mobile-friendly layout with dark mode.
 
@@ -50,7 +50,7 @@ Downloads mirror this: the app issues a 1-hour signed URL and redirects to it �
 
 ## Privacy & limits
 
-- **25 MB max per file**, enforced server-side.
+- **50 MB max per file**, enforced server-side.
 - Fully anonymous — no accounts, no tracking, no personal data collected.
 - Objects sit in **private storage** and are only reachable through short-lived signed URLs issued per request.
 - Deleting a file removes both the storage object and its metadata row.

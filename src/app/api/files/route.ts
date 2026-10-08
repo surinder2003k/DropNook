@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
 
 const BUCKET = "uploads";
-const MAX_SIZE_BYTES = 25 * 1024 * 1024;
+const MAX_SIZE_BYTES = 50 * 1024 * 1024;
 
 export const FILE_SELECT =
   "id, filename, mime_type, size_bytes, storage_key, status, uploaded_at";
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     size_bytes > MAX_SIZE_BYTES
   ) {
     return NextResponse.json(
-      { error: "size_bytes must be between 1 byte and 25 MB" },
+      { error: "size_bytes must be between 1 byte and 50 MB" },
       { status: 400 },
     );
   }
