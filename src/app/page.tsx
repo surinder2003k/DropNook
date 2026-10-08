@@ -44,8 +44,8 @@ export default function Home() {
           </h1>
           <p className="mx-auto mt-4 max-w-lg text-base leading-7 text-zinc-500 dark:text-zinc-400">
             DropNook lets you drop any file — documents, photos, videos,
-            archives — and get a shareable link in seconds. Powered by Supabase
-            Storage.
+            archives — and get a shareable link in seconds. Powered by
+            Backblaze B2 storage.
           </p>
         </div>
 
@@ -59,8 +59,8 @@ export default function Home() {
         <div className="mx-auto flex w-full max-w-3xl flex-col items-center justify-between gap-2 px-5 text-xs text-zinc-400 sm:flex-row dark:text-zinc-500">
           <span>© {YEAR} DropNook</span>
           <span>
-            Files live in Supabase Storage · Region{" "}
-            <span className="font-mono">ap-south-1</span>
+            Files live in Backblaze B2 · Region{" "}
+            <span className="font-mono">us-east-005</span>
           </span>
         </div>
       </footer>

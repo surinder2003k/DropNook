@@ -157,6 +157,97 @@ export async function deleteB2Object(objectKey: string): Promise<void> {
   }
 }
 
+/**
+ * Live bucket usage — sums EVERY stored version via the B2 native API
+ * (b2_list_file_versions). This is the ground truth for the storage bar:
+ * an S3 ListObjectsV2 only sees current versions, so it reports 0 while
+ * the B2 console still bills old/hidden versions (e.g. a test file that
+ * was "deleted" but kept as history). Summing all versions (except
+ * zero-byte hide markers) makes the bar match the billed size.
+ */
+export async function getB2BucketUsage(): Promise<{
+  used: number;
+  objects: number;
+}> {
+  const config = requireConfig();
+  type B2Auth = {
+    apiUrl: string;
+    authorizationToken: string;
+  };
+  const authRes = await fetch(
+    "https://api.backblazeb2.com/b2api/v2/b2_authorize_account",
+    {
+      headers: {
+        Authorization: `Basic ${Buffer.from(
+          `${config.accessKeyId}:${config.secretAccessKey}`,
+        ).toString("base64")}`,
+      },
+    },
+  );
+  if (!authRes.ok) {
+    throw new Error(`B2 auth failed (${authRes.status})`);
+  }
+  const auth = (await authRes.json()) as B2Auth;
+  const authHeader = { Authorization: auth.authorizationToken };
+
+  const bucketRes = await fetch(`${auth.apiUrl}/b2api/v2/b2_list_buckets`, {
+    method: "POST",
+    headers: { ...authHeader, "Content-Type": "application/json" },
+    body: JSON.stringify({ bucketName: config.bucket }),
+  });
+  if (!bucketRes.ok) {
+    throw new Error(`B2 bucket lookup failed (${bucketRes.status})`);
+  }
+  const bucketBody = (await bucketRes.json()) as {
+    buckets?: { bucketId: string }[];
+  };
+  const bucketId = bucketBody.buckets?.[0]?.bucketId;
+  if (!bucketId) {
+    throw new Error(`B2 bucket "${config.bucket}" not found`);
+  }
+
+  let used = 0;
+  let objects = 0;
+  let nextFileId: string | null | undefined;
+  let nextFileName: string | null | undefined;
+  for (;;) {
+    // startFileId/startFileName must be sent together — B2 rejects a lone
+    // startFileId with 400, which would break pagination past 1000 files.
+    const hasCursor = Boolean(nextFileId && nextFileName);
+    const pageRes = await fetch(
+      `${auth.apiUrl}/b2api/v2/b2_list_file_versions`,
+      {
+        method: "POST",
+        headers: { ...authHeader, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucketId,
+          maxFileCount: 1000,
+          ...(hasCursor
+            ? { startFileId: nextFileId, startFileName: nextFileName }
+            : {}),
+        }),
+      },
+    );
+    if (!pageRes.ok) {
+      throw new Error(`B2 file listing failed (${pageRes.status})`);
+    }
+    const page = (await pageRes.json()) as {
+      files?: { action?: string; contentLength?: number }[];
+      nextFileId?: string | null;
+      nextFileName?: string | null;
+    };
+    for (const file of page.files ?? []) {
+      objects += 1;
+      // Hide markers are zero bytes; real versions (upload/start) are billed.
+      used += file.contentLength ?? 0;
+    }
+    nextFileId = page.nextFileId;
+    nextFileName = page.nextFileName;
+    if (!nextFileId && !nextFileName) break;
+  }
+  return { used, objects };
+}
+
 function isNotFound(err: unknown): boolean {
   if (err && typeof err === "object") {
     const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };

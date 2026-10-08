@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { connection, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
 import {
   B2_KEY_PREFIX,
@@ -17,6 +17,8 @@ export const FILE_SELECT =
  * GET /api/files — list uploaded files, newest first.
  */
 export async function GET() {
+  // Live per request (pairs with connection() usage across API routes).
+  await connection();
   try {
     const supabase = getSupabaseServer();
     const { data, error } = await supabase
