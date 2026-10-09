@@ -1,0 +1,12 @@
+# ads.txt — Authorized Digital Sellers for AdSense
+#
+# After you are approved for Google AdSense, replace pub-0000000000000000 below
+# with YOUR publisher id (found in the AdSense dashboard → Account → Settings).
+# The four trailing fields are fixed for AdSense; the tag id (f08c47fec0942fa0)
+# is the standard first-party (site-level) tag. Keep this file at the site root:
+#   https://<your-domain>/ads.txt
+#
+# Example once you have your real id:
+#   google.com, pub-1234567890123456, DIRECT, f08c47fec0942fa0
+
+google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0

@@ -1,7 +1,22 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import ShareView from "./ShareView";
 
 type PageProps = { params: Promise<{ slug: string }> };
+
+/**
+ * Private, single-use share pages must never be indexed or followed — the
+ * slug is a secret bearer token. robots noindex/nofollow keeps Google out.
+ */
+export const metadata: Metadata = {
+  title: "Shared file",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: { index: false, follow: false },
+  },
+};
 
 /**
  * Server wrapper for the public share page `/s/<slug>`.

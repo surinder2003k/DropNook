@@ -110,19 +110,26 @@ export async function presignB2Upload(objectKey: string): Promise<string> {
   });
 }
 
-/** Presigned GET URL that forces an attachment download with the real filename. */
+/**
+ * Presigned GET URL for a stored object. Default forces an `attachment`
+ * disposition with the real filename (the download endpoint). `{ inline }`
+ * keeps the browser from prompting a save so previews render in-page, and
+ * `contentType` overrides the stored type (uploads land as octet-stream).
+ */
 export async function presignB2Download(
   objectKey: string,
   filename: string,
+  opts?: { inline?: boolean; contentType?: string | null },
 ): Promise<string> {
   const config = requireConfig();
   const asciiName =
     filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_") || "download";
-  const disposition = `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+  const disposition = `${opts?.inline ? "inline" : "attachment"}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
   const command = new GetObjectCommand({
     Bucket: config.bucket,
     Key: objectKey,
     ResponseContentDisposition: disposition,
+    ...(opts?.contentType ? { ResponseContentType: opts.contentType } : {}),
   });
   return getSignedUrl(getClient(config), command, {
     expiresIn: GET_URL_TTL_SECONDS,

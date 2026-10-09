@@ -54,7 +54,7 @@ async function main() {
   const page = await fetch(`${BASE}/`);
   ok("GET / returns 200", page.status === 200, `got ${page.status}`);
   const html = await page.text();
-  ok("page renders DropNook branding", html.includes("DropNook"));
+  ok("page renders Dropzone branding", html.includes("Dropzone"));
 
   // 1. empty list
   const list0 = await fetch(`${BASE}/api/files`);

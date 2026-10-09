@@ -43,3 +43,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local scratch notes / debug artifacts (do not commit)
+/b2part.txt
+/dz.txt
+/screenshot-*.png
+/t_*.log
+*.out.log
+*.err.log

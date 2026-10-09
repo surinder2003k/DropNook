@@ -3,6 +3,7 @@ import { getSupabaseServer } from "@/lib/supabase";
 import { generateSlug, hashPassword } from "@/lib/share";
 import {
   B2_KEY_PREFIX,
+  b2ObjectKey,
   deleteB2Object,
   headB2Object,
   isB2Configured,
@@ -225,3 +226,82 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_BULK = 50;
+
+/**
+ * DELETE /api/files  (bulk)
+ * Body: { ids: string[] }
+ *
+ * Deletes up to 50 files in one request — used by the multi-select bulk action.
+ * Each file is deleted through the same backend-aware path as DELETE /api/files/[id]
+ * (B2 version delete or Supabase object + row), so share rules and storage
+ * cleanup stay consistent. Ids that no longer exist are skipped, so the bulk
+ * call never fails just because one row raced away.
+ */
+export async function DELETE(req: Request) {
+  try {
+    let ids: unknown;
+    try {
+      const body = await req.json();
+      ids = body?.ids;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: "ids must be a non-empty array" }, { status: 400 });
+    }
+    if (ids.length > MAX_BULK) {
+      return NextResponse.json(
+        { error: `Too many ids (max ${MAX_BULK})` },
+        { status: 400 },
+      );
+    }
+    if (!ids.every((id) => typeof id === "string" && UUID_RE.test(id))) {
+      return NextResponse.json({ error: "All ids must be valid UUIDs" }, { status: 400 });
+    }
+
+    const supabase = getSupabaseServer();
+    const { data, error } = await supabase
+      .from("file_uploads")
+      .select("id, storage_key")
+      .in("id", ids);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!data || data.length === 0) {
+      return NextResponse.json({ deleted: [] });
+    }
+
+    const deleted: string[] = [];
+    for (const file of data) {
+      const b2Key = b2ObjectKey(file.storage_key);
+      if (b2Key !== null) {
+        if (isB2Configured()) await deleteB2Object(b2Key);
+      } else {
+        await supabase.storage.from(BUCKET).remove([file.storage_key]);
+      }
+      deleted.push(file.id);
+    }
+
+    if (deleted.length > 0) {
+      const { error: dbError } = await supabase
+        .from("file_uploads")
+        .delete()
+        .in("id", deleted);
+      if (dbError) {
+        return NextResponse.json({ error: dbError.message }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ deleted });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unexpected server error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
