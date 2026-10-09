@@ -180,6 +180,126 @@ async function main() {
   const miss = await fetch(`${BASE}/api/files/00000000-0000-0000-0000-000000000000`);
   ok("GET unknown id returns 404", miss.status === 404, `got ${miss.status}`);
 
+  // ---------- Phase 2: share links / password / limits / zip ----------
+
+  /** Upload a small file exactly like the browser, with optional share rules. */
+  async function uploadWithShare(shareOpts, name) {
+    const sRes = await fetch(`${BASE}/api/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: name, size: CONTENT.length, mime_type: "application/octet-stream" }),
+    });
+    const s = await sRes.json();
+    if (!sRes.ok) throw new Error(`sign failed: ${JSON.stringify(s)}`);
+    const putUrl2 = isB2
+      ? s.signedUrl
+      : `${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${s.path}?token=${encodeURIComponent(s.token)}`;
+    const pr = await fetch(putUrl2, { method: "PUT", headers: putHeaders, body: CONTENT });
+    if (!pr.ok) throw new Error(`PUT failed (${pr.status})`);
+    const cRes = await fetch(`${BASE}/api/files`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: s.path,
+        filename: name,
+        mime_type: "application/octet-stream",
+        size_bytes: CONTENT.length,
+        ...shareOpts,
+      }),
+    });
+    const c = await cRes.json();
+    if (!cRes.ok) throw new Error(`confirm failed: ${JSON.stringify(c)}`);
+    return c.file;
+  }
+
+  const stamp = Date.now();
+
+  // 10. shareable link: slug + password + expiry metadata
+  const pwFile = await uploadWithShare(
+    { password: "hunter2", max_downloads: 5, expires_in_hours: 1 },
+    `share-pw-${stamp}.bin`,
+  );
+  ok("upload with share options stores a slug", !!pwFile.slug,
+    JSON.stringify(pwFile).slice(0, 300));
+
+  const sGet = await fetch(`${BASE}/api/share/${pwFile.slug}`);
+  const sMeta = await sGet.json();
+  ok("GET /api/share/[slug] returns metadata",
+    sGet.ok && sMeta.filename === pwFile.filename && sMeta.has_password === true,
+    JSON.stringify(sMeta).slice(0, 300));
+  ok("share metadata carries expiry + max_downloads",
+    !!sMeta.expires_at && sMeta.max_downloads === 5,
+    `expires_at=${sMeta.expires_at} max=${sMeta.max_downloads}`);
+
+  const badPw = await fetch(`${BASE}/api/share/${pwFile.slug}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: "wrong" }),
+  });
+  ok("POST wrong password returns 401", badPw.status === 401, `got ${badPw.status}`);
+
+  const goodPw = await fetch(`${BASE}/api/share/${pwFile.slug}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: "hunter2" }),
+  });
+  const goodBody = await goodPw.json();
+  ok("POST correct password returns download_url",
+    goodPw.ok && !!goodBody.download_url,
+    JSON.stringify(goodBody).slice(0, 300));
+  ok("signed download URL is fetchable", !!goodBody.download_url &&
+    (await fetch(goodBody.download_url)).ok);
+
+  const sMeta2 = await (await fetch(`${BASE}/api/share/${pwFile.slug}`)).json();
+  ok("download counter incremented after share download",
+    sMeta2.download_count === 1, `count=${sMeta2.download_count}`);
+
+  // 11. max-downloads exhaustion (share + raw endpoints both enforce)
+  const oneFile = await uploadWithShare({ max_downloads: 1 }, `share-1x-${stamp}.bin`);
+  const d1 = await fetch(`${BASE}/api/share/${oneFile.slug}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  ok("first (and only) download allowed", d1.ok, `got ${d1.status}`);
+  const d2 = await fetch(`${BASE}/api/share/${oneFile.slug}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  ok("second download blocked with 410", d2.status === 410, `got ${d2.status}`);
+  const gEx = await fetch(`${BASE}/api/share/${oneFile.slug}`);
+  ok("GET after exhaustion returns 410", gEx.status === 410, `got ${gEx.status}`);
+  const rawEx = await fetch(`${BASE}/api/files/${oneFile.id}`, { redirect: "manual" });
+  ok("raw /api/files/[id] also 410 after exhaustion", rawEx.status === 410,
+    `got ${rawEx.status}`);
+
+  // 12. public share page renders
+  const sp = await fetch(`${BASE}/s/${pwFile.slug}`);
+  ok("GET /s/[slug] returns 200", sp.status === 200, `got ${sp.status}`);
+  const spHtml = await sp.text();
+  // The server shell streams the Suspense fallback ("Loading...").
+  ok("share page serves the client shell",
+    spHtml.includes("Loading"), `len=${spHtml.length}`);
+
+  // 13. ZIP download-all
+  const zip = await fetch(`${BASE}/api/zip?ids=${pwFile.id}`);
+  const ctype = zip.headers.get("content-type") || "";
+  ok("GET /api/zip responds with zip content-type",
+    zip.ok && ctype.includes("zip"), `${zip.status} ${ctype}`);
+  const zipBytes = Buffer.from(await zip.arrayBuffer());
+  ok("zip payload has PK signature and real bytes",
+    zipBytes.length > 100 && zipBytes[0] === 0x50 && zipBytes[1] === 0x4b,
+    `len=${zipBytes.length}`);
+  const zipBad = await fetch(`${BASE}/api/zip?ids=not-a-uuid`);
+  ok("GET /api/zip rejects invalid ids", zipBad.status === 400, `got ${zipBad.status}`);
+
+  // 14. cleanup share fixtures
+  for (const f of [pwFile, oneFile]) {
+    const cd = await fetch(`${BASE}/api/files/${f.id}`, { method: "DELETE" });
+    ok(`cleanup deletes ${f.filename}`, cd.ok, `got ${cd.status}`);
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exitCode = failed > 0 ? 1 : 0;
 }

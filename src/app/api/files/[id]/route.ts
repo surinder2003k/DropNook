@@ -27,13 +27,34 @@ export async function GET(_req: Request, { params }: RouteContext) {
     const supabase = getSupabaseServer();
     const { data: file, error } = await supabase
       .from("file_uploads")
-      .select("filename, storage_key")
+      .select("filename, storage_key, expires_at, max_downloads, download_count")
       .eq("id", id)
       .single();
 
     if (error || !file) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
+
+    // Enforce share rules even on the raw download endpoint, so an expired
+    // or exhausted link can't be bypassed by hitting /api/files/<id> directly.
+    if (file.expires_at && new Date(file.expires_at).getTime() < Date.now()) {
+      return NextResponse.json(
+        { error: "This link has expired", expired: true },
+        { status: 410 },
+      );
+    }
+    if (file.max_downloads != null && (file.download_count ?? 0) >= file.max_downloads) {
+      return NextResponse.json(
+        { error: "Download limit reached", exhausted: true },
+        { status: 410 },
+      );
+    }
+
+    // Count this download (best-effort; the download still proceeds on failure).
+    await supabase
+      .from("file_uploads")
+      .update({ download_count: (file.download_count ?? 0) + 1 })
+      .eq("id", id);
 
     const b2Key = b2ObjectKey(file.storage_key);
     if (b2Key !== null) {

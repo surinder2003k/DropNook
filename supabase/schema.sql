@@ -19,6 +19,26 @@ create table if not exists public.file_uploads (
 create index if not exists file_uploads_uploaded_at_idx
   on public.file_uploads (uploaded_at desc);
 
+-- ---------- 1b. Share / access-control columns -------------------
+-- Added for the shareable-link features (share slug, password, expiry,
+-- max downloads, download counter). Idempotent so re-running is safe.
+alter table public.file_uploads
+  add column if not exists slug            text,
+  add column if not exists password_hash   text,
+  add column if not exists expires_at      timestamptz,
+  add column if not exists max_downloads   integer,
+  add column if not exists download_count  integer not null default 0;
+
+create unique index if not exists file_uploads_slug_key
+  on public.file_uploads (slug);
+
+-- Guard rails on the new optional columns.
+alter table public.file_uploads
+  drop constraint if exists file_uploads_max_downloads_positive;
+alter table public.file_uploads
+  add constraint file_uploads_max_downloads_positive
+  check (max_downloads is null or max_downloads > 0);
+
 -- ---------- 2. Row Level Security -----------------------------
 -- The app is intentionally auth-less: RLS is enabled but the
 -- policies below are permissive (matching the no-auth UX). The
@@ -41,6 +61,15 @@ drop policy if exists "public delete file_uploads" on public.file_uploads;
 create policy "public delete file_uploads"
   on public.file_uploads for delete
   using (true);
+
+-- UPDATE is required for the download counter (download_count increments on
+-- every download). Without this policy the anon-key updates silently match
+-- zero rows, so share limits never trigger.
+drop policy if exists "public update file_uploads" on public.file_uploads;
+create policy "public update file_uploads"
+  on public.file_uploads for update
+  using (true)
+  with check (true);
 
 -- ---------- 3. Storage bucket ---------------------------------
 

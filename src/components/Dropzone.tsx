@@ -8,6 +8,8 @@ import {
   DownloadIcon,
   InboxIcon,
   LinkIcon,
+  LockIcon,
+  QrIcon,
   SpinnerIcon,
   TrashIcon,
   XIcon,
@@ -15,6 +17,7 @@ import {
 } from "./icons";
 import { formatBytes } from "@/lib/format";
 import { STORAGE_REFRESH_EVENT } from "./StorageBar";
+import ShareModal, { type ShareFile } from "./ShareModal";
 
 const MAX_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB single-PUT ceiling
 
@@ -24,6 +27,18 @@ type UploadedFile = {
   mime_type: string | null;
   size_bytes: number;
   uploaded_at: string;
+  slug?: string | null;
+  expires_at?: string | null;
+  max_downloads?: number | null;
+  download_count?: number | null;
+  has_password?: boolean;
+};
+
+/** Share rules chosen before uploading (all optional, enforced server-side). */
+type ShareOptions = {
+  password?: string;
+  expires_in_hours?: number;
+  max_downloads?: number;
 };
 
 type QueueItem = {
@@ -68,7 +83,8 @@ const STORAGE_BUCKET = "uploads";
 function uploadFile(
   file: File,
   onProgress: (pct: number) => void,
-): Promise<{ id: string }> {
+  share?: ShareOptions,
+): Promise<{ file: UploadedFile }> {
   return (async () => {
     // --- step 1: get a signed upload token -------------------------------
     const signRes = await fetch("/api/upload", {
@@ -140,6 +156,12 @@ function uploadFile(
         filename: file.name,
         mime_type: file.type || "application/octet-stream",
         size_bytes: file.size,
+        // Optional share rules (password / expiry / max downloads).
+        ...(share?.password ? { password: share.password } : {}),
+        ...(share?.expires_in_hours
+          ? { expires_in_hours: share.expires_in_hours }
+          : {}),
+        ...(share?.max_downloads ? { max_downloads: share.max_downloads } : {}),
       }),
     });
     const confirmBody = await confirmRes.json().catch(() => ({}));
@@ -148,7 +170,7 @@ function uploadFile(
     }
 
     onProgress(100);
-    return { id: confirmBody.file.id as string };
+    return { file: confirmBody.file as UploadedFile };
   })();
 }
 
@@ -162,6 +184,14 @@ export default function Dropzone() {
   const [banner, setBanner] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // Share-modal state (opens after an upload, or from a row's share button).
+  const [shareFile, setShareFile] = useState<ShareFile | null>(null);
+  const [shareHasPassword, setShareHasPassword] = useState(false);
+  // Pre-upload share options panel.
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [optPassword, setOptPassword] = useState("");
+  const [optExpiry, setOptExpiry] = useState(""); // hours as a string, "" = never
+  const [optMaxDownloads, setOptMaxDownloads] = useState(""); // "" = unlimited
   const inputRef = useRef<HTMLInputElement>(null);
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -219,23 +249,36 @@ export default function Dropzone() {
       }));
       setQueue((q) => [...q, ...items]);
 
+      // Snapshot the current share options for this batch of uploads.
+      const shareOpts: ShareOptions = {
+        password: optPassword.trim() || undefined,
+        expires_in_hours: optExpiry ? Number(optExpiry) : undefined,
+        max_downloads: optMaxDownloads ? Number(optMaxDownloads) : undefined,
+      };
+      const hadPassword = !!shareOpts.password;
+
       const results = await Promise.allSettled(
         accepted.map((file, i) =>
-          uploadFile(file, (pct) =>
-            setQueue((q) =>
-              q.map((it) =>
-                it.localId === items[i].localId ? { ...it, progress: pct } : it,
+          uploadFile(
+            file,
+            (pct) =>
+              setQueue((q) =>
+                q.map((it) =>
+                  it.localId === items[i].localId ? { ...it, progress: pct } : it,
+                ),
               ),
-            ),
+            shareOpts,
           ),
         ),
       );
 
       let succeeded = 0;
+      let firstUploaded: UploadedFile | null = null;
       results.forEach((result, i) => {
         const localId = items[i].localId;
         if (result.status === "fulfilled") {
           succeeded++;
+          if (!firstUploaded) firstUploaded = result.value.file;
           setQueue((q) =>
             q.map((it) =>
               it.localId === localId ? { ...it, status: "done", progress: 100 } : it,
@@ -256,6 +299,12 @@ export default function Dropzone() {
       if (succeeded > 0) {
         await refreshList();
         window.dispatchEvent(new Event(STORAGE_REFRESH_EVENT));
+        // Pop the share dialog for the first successful upload — that's the
+        // "share link ready" moment Dropzone-Share-style tools use.
+        if (firstUploaded) {
+          setShareHasPassword(hadPassword);
+          setShareFile(firstUploaded);
+        }
         setTimeout(() => {
           const doneIds = new Set(
             items
@@ -266,7 +315,7 @@ export default function Dropzone() {
         }, 2500);
       }
     },
-    [refreshList, showBanner],
+    [refreshList, showBanner, optPassword, optExpiry, optMaxDownloads],
   );
 
   const onDragOver = (e: React.DragEvent) => {
@@ -285,7 +334,11 @@ export default function Dropzone() {
   };
 
   const copyLink = async (file: UploadedFile) => {
-    const url = `${window.location.origin}/api/files/${file.id}`;
+    // Prefer the public share page (/s/<slug>); fall back to the raw
+    // download endpoint for rows created before slugs existed.
+    const url = file.slug
+      ? `${window.location.origin}/s/${file.slug}`
+      : `${window.location.origin}/api/files/${file.id}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopiedId(file.id);
@@ -293,6 +346,11 @@ export default function Dropzone() {
     } catch {
       showBanner("Copy failed — your browser blocked clipboard access.");
     }
+  };
+
+  const openShare = (file: UploadedFile, hasPassword = false) => {
+    setShareHasPassword(hasPassword);
+    setShareFile(file);
   };
 
   const deleteFile = async (file: UploadedFile) => {
@@ -389,6 +447,82 @@ export default function Dropzone() {
               No sign-up needed
             </span>
           </div>
+
+          {/* Optional share rules applied to the next upload(s). */}
+          <div className="w-full max-w-sm">
+            <button
+              type="button"
+              onClick={() => setOptionsOpen((o) => !o)}
+              aria-expanded={optionsOpen}
+              className="mx-auto flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-500 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-400 dark:hover:border-indigo-500/50 dark:hover:text-indigo-400"
+            >
+              <LockIcon className="h-3.5 w-3.5" />
+              Share options
+              {(optPassword || optExpiry || optMaxDownloads) && (
+                <span className="ml-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+              )}
+            </button>
+
+            {optionsOpen && (
+              <div className="animate-pop-in mt-3 flex flex-col gap-3 rounded-2xl border border-zinc-200/80 bg-white/90 p-4 text-left shadow-sm dark:border-zinc-700 dark:bg-zinc-800/60">
+                <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  Password (optional)
+                  <input
+                    type="password"
+                    value={optPassword}
+                    onChange={(e) => setOptPassword(e.target.value)}
+                    placeholder="Require a password to download"
+                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-indigo-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </label>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                    Link expires
+                    <select
+                      value={optExpiry}
+                      onChange={(e) => setOptExpiry(e.target.value)}
+                      className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-indigo-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    >
+                      <option value="">Never</option>
+                      <option value="1">1 hour</option>
+                      <option value="24">24 hours</option>
+                      <option value="72">3 days</option>
+                      <option value="168">7 days</option>
+                      <option value="720">30 days</option>
+                    </select>
+                  </label>
+
+                  <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                    Max downloads
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={optMaxDownloads}
+                      onChange={(e) => setOptMaxDownloads(e.target.value)}
+                      placeholder="Unlimited"
+                      className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-indigo-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    />
+                  </label>
+                </div>
+
+                {(optPassword || optExpiry || optMaxDownloads) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOptPassword("");
+                      setOptExpiry("");
+                      setOptMaxDownloads("");
+                    }}
+                    className="self-start text-xs font-medium text-zinc-400 transition hover:text-rose-500"
+                  >
+                    Clear options
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -451,9 +585,21 @@ export default function Dropzone() {
             Your files
           </h2>
           {!listLoading && !listError && files.length > 0 && (
-            <span className="text-xs text-zinc-400 dark:text-zinc-500">
-              {files.length} file{files.length === 1 ? "" : "s"} ·{" "}
-              {formatBytes(totalSize)} total
+            <span className="flex items-center gap-3 text-xs text-zinc-400 dark:text-zinc-500">
+              <span>
+                {files.length} file{files.length === 1 ? "" : "s"} ·{" "}
+                {formatBytes(totalSize)} total
+              </span>
+              <a
+                href={`/api/zip?ids=${files
+                  .map((f) => f.id)
+                  .join(",")}`}
+                title="Download every file as a single ZIP"
+                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-medium text-zinc-500 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-400 dark:hover:border-indigo-500/50 dark:hover:text-indigo-400"
+              >
+                <DownloadIcon className="h-3.5 w-3.5" />
+                ZIP all
+              </a>
             </span>
           )}
         </div>
@@ -546,6 +692,14 @@ export default function Dropzone() {
                         <LinkIcon className="h-4.5 w-4.5" />
                       )}
                     </button>
+                    <button
+                      onClick={() => openShare(file, file.has_password === true)}
+                      title="Share (QR & options)"
+                      aria-label={`Share ${file.filename}`}
+                      className="rounded-lg p-2 text-zinc-400 opacity-0 transition group-hover:opacity-100 hover:bg-zinc-100 hover:text-indigo-600 focus:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-indigo-400"
+                    >
+                      <QrIcon className="h-4.5 w-4.5" />
+                    </button>
 
                     {isConfirming ? (
                       <span className="flex items-center gap-1">
@@ -579,6 +733,13 @@ export default function Dropzone() {
           </ul>
         )}
       </section>
+
+      {/* Share dialog (QR + copy + rules) */}
+      <ShareModal
+        file={shareFile}
+        hasPassword={shareHasPassword}
+        onClose={() => setShareFile(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { connection, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase";
+import { generateSlug, hashPassword } from "@/lib/share";
 import {
   B2_KEY_PREFIX,
   deleteB2Object,
@@ -11,7 +12,39 @@ const BUCKET = "uploads";
 const MAX_SIZE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB single-PUT ceiling (matches /api/upload)
 
 export const FILE_SELECT =
-  "id, filename, mime_type, size_bytes, storage_key, status, uploaded_at";
+  "id, filename, mime_type, size_bytes, storage_key, status, uploaded_at, slug, expires_at, max_downloads, download_count";
+
+type FileRow = {
+  id: string;
+  filename: string;
+  mime_type: string | null;
+  size_bytes: number;
+  storage_key: string;
+  status: string;
+  uploaded_at: string;
+  slug: string | null;
+  expires_at: string | null;
+  max_downloads: number | null;
+  download_count: number;
+  password_hash?: string | null;
+};
+
+/** Public shape of a file row: never leaks storage_key or the password hash. */
+function toPublicFile(row: FileRow) {
+  return {
+    id: row.id,
+    filename: row.filename,
+    mime_type: row.mime_type,
+    size_bytes: row.size_bytes,
+    status: row.status,
+    uploaded_at: row.uploaded_at,
+    slug: row.slug,
+    expires_at: row.expires_at,
+    max_downloads: row.max_downloads,
+    download_count: row.download_count,
+    has_password: !!row.password_hash,
+  };
+}
 
 /**
  * GET /api/files — list uploaded files, newest first.
@@ -23,7 +56,7 @@ export async function GET() {
     const supabase = getSupabaseServer();
     const { data, error } = await supabase
       .from("file_uploads")
-      .select(FILE_SELECT)
+      .select(`${FILE_SELECT}, password_hash`)
       .order("uploaded_at", { ascending: false })
       .limit(100);
 
@@ -37,7 +70,7 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({ files: data ?? [] });
+    return NextResponse.json({ files: (data ?? []).map(toPublicFile) });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unexpected server error";
@@ -59,6 +92,9 @@ export async function POST(req: Request) {
     filename?: unknown;
     mime_type?: unknown;
     size_bytes?: unknown;
+    password?: unknown;
+    expires_in_hours?: unknown;
+    max_downloads?: unknown;
   };
   try {
     body = await req.json();
@@ -151,6 +187,23 @@ export async function POST(req: Request) {
         size_bytes: verifiedSize,
         storage_key: path,
         status: "uploaded",
+        slug: generateSlug(),
+        password_hash:
+          typeof body.password === "string" && body.password.length > 0
+            ? hashPassword(body.password)
+            : null,
+        expires_at:
+          typeof body.expires_in_hours === "number" &&
+          Number.isFinite(body.expires_in_hours) &&
+          body.expires_in_hours > 0
+            ? new Date(Date.now() + body.expires_in_hours * 3600 * 1000).toISOString()
+            : null,
+        max_downloads:
+          typeof body.max_downloads === "number" &&
+          Number.isFinite(body.max_downloads) &&
+          body.max_downloads > 0
+            ? Math.floor(body.max_downloads)
+            : null,
       })
       .select(FILE_SELECT)
       .single();
